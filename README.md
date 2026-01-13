@@ -101,6 +101,37 @@ This project uses **Poetry** for dependency management and requires **Python 3.1
 - Python 3.12
 - Poetry
 
+### Structure
+
+```
+src/
+└── gym_agro_carbon/
+    ├── __init__.py
+    ├── envs/
+    │   ├── __init__.py
+    │   ├── grid.py              # Env
+    ├── models/
+    │   ├── __init__.py
+    │   ├── context.py         # Context encoding x=(s, tau)
+    │   └── reward.py          # Reward calculation
+    ├── bandits/
+    │   ├── __init__.py
+    │   ├── base.py            
+    │   ├── ucb.py             # Contextual Batch UCB 
+    │   └── thompson.py        # Contextual BAtch Thompson Sampling
+    ├── evaluation/
+    │   ├── __init__.py
+    │   ├── oracle.py          
+    │   └── regret.py
+    ├── notebooks/
+    │   ├── 01_smoke_grid_env.ipynb         
+    └── viz/
+        ├── __init__.py
+        ├── render.py          
+        └── movie.py           # generate_movie(frames, path)
+        
+```
+
 ### Setup
 
 Clone the repository and install the dependencies:
