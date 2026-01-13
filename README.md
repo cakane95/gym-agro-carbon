@@ -124,12 +124,13 @@ src/
     │   ├── oracle.py          
     │   └── regret.py
     ├── notebooks/
-    │   ├── 01_smoke_grid_env.ipynb         
+    │   ├── 01_smoke_grid_env.ipynb
+    │   └── 02_ucb_vs_random_smoke.ipynb       
     └── viz/
         ├── __init__.py
         ├── render.py          
         └── movie.py           # generate_movie(frames, path)
-        
+
 ```
 
 ### Setup
