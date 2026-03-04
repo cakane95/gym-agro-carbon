@@ -37,7 +37,7 @@ species Task {
         float mu_yield <- yield_vals[action_id];
         
         // 2. Apply transition with Gaussian noise (Stochasticity)
-        // SOC update: g/kg
+        // SOC update: Mg/ha
         float noise_soc <- gauss(0, s_soc);
         cell.SOC <- cell.SOC + mu_soc + noise_soc; 
         
