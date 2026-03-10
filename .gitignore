@@ -220,6 +220,19 @@ __marimo__/
 .project
 .settings/
 
+# Résultats d'expériences et Logs
+logs/
+results/
+summary/
+*.npy
+*.csv
+
+# Figures et Visualisations
+figures/
+*.png
+*.jpg
+*.pdf
+
 # Commit Message
 commit-message.txt
 notes.txt

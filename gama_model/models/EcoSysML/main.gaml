@@ -30,12 +30,12 @@ global {
     // --- Policy Parameters ---
     float alpha <- 0.5; // Trade-off between environmental and economic rewards
     
-    // --- State Variables (Units: SOC in g/kg | Yield in t/ha) ---
+    // --- State Variables (Units: SOC in t/ha | Yield in t/ha) ---
     // These are initialized by the parameters in the experiment block
     
     // Average Ecological Impact of actions
-    float mu_delta_soc_fallow <- 0.5;
-    float mu_delta_soc_manure <- 0.8;
+    float mu_delta_soc_fallow <- 0.4;
+    float mu_delta_soc_manure <- 0.6;
     float mu_delta_soc_tree <- 1.0;
     float mu_delta_soc_baseline <- 0.2;
     
@@ -57,6 +57,8 @@ global {
     Task biophysical_engine;
     
     GymAgent gym_interface;
+    
+    int current_episode <- 0 ;
 
     init {
     	
@@ -65,11 +67,11 @@ global {
 		gym_interface <- first(gymagents);
 		
 		ask gym_interface {
-		    // Initialisation des matrices de SOC et de Rendement (10x10)
+		    // Initialize SOC and Yield for all parcels
 		    matrix soc_init <- 0.0 as_matrix({10,10});
 		    matrix yield_init <- 0.0 as_matrix({10,10});
 		    
-		    // On remplit la map data pour le premier reset de Python
+		    // Initialize RL environment data
 		    data <- [
 		        "State":: 0 as_matrix({10,10}), // État initial (ex: types de cultures)
 		        "Reward":: 0.0,
@@ -84,7 +86,7 @@ global {
 		
 		write "GAMA: GymAgent interface initialized and ready.";
         
-    	// --- 1. Engine Instantiation (Corrected Syntax) ---
+    	// --- 1. Engine Instantiation ---
         // Create 1 Task agent, initialize it, and retrieve it using 'returns'
         create Task number: 1 returns: engines {
             name <- "Biophysical_Engine";
@@ -93,7 +95,7 @@ global {
         biophysical_engine <- first(engines);
         
         // --- 2. Load Data ---
-        // Load the CSV content into a matrix (8 rows x 3 columns)
+        // Load the soil data CSV content into a matrix (8 rows x 3 columns)
         matrix soil_ref <- matrix(soil_ref_file);
         
         // --- 3. Territory Initialization ---
@@ -111,7 +113,7 @@ global {
             self.SOC <- max(0.0, gauss(mu_init, sigma_init));
             
             // --- VISUALIZATION INIT ---
-            // Green Gradient: Hue=120° (approx 0.33), Saturation depends on SOC (capped at 60 Mg/ha for display)
+            // Green Gradient: Hue=120° (approx 0.33), Saturation depends on SOC (capped at 30 Mg/ha for display)
             self.color <- hsb(0.33, min(1.0, self.SOC / 30.0), 0.9);
             
             // Initialize dynamic variables
@@ -122,7 +124,7 @@ global {
 
         // --- 4. Actor Setup ---
         create Actor {
-            id <- "Farmer_Agent_1";
+            id <- "PolicyMaker_Agent_1";
             ownedResources <- list(Parcel);
         }
         
@@ -132,7 +134,7 @@ global {
         yield_effects <- [mu_yield_fallow, mu_yield_manure, mu_yield_tree, mu_yield_baseline];
         
         list<int> obs_init <- Parcel collect ((each.soil_type_id - 1) * (M + 1) + each.new_tree_age);
-    	list<float> rewards_init <- Parcel collect (0.0); // Pas de reward au temps 0
+    	list<float> rewards_init <- Parcel collect (0.0); // Initialize rewards at 0
     	list<float> socs_init <- Parcel collect each.SOC;
     	list<float> yields_init <- Parcel collect each.yield;
     	
@@ -152,29 +154,47 @@ global {
     }
 
     reflex simulation_cycle {
-        // On récupère les actions envoyées par Python
-        list<int> actions_list <- gym_interface.next_action;
+    // 1. Receive actions from Python agent
+    list<int> actions_list <- gym_interface.next_action;
+    
+    // 2. Ensure synchronization (Wait for Python decision)
+    if (length(actions_list) = length(Parcel)) {
         
-        // Sécurité : on ne fait rien si la liste est vide (cas du premier cycle)
-        if (length(actions_list) = length(Parcel)) {
-            
-            ask Parcel {
-                int my_action <- actions_list[self.index]; 
-                ask biophysical_engine {
-                    do execute_on(myself, my_action, soc_effects, yield_effects, sigma_soc, sigma_yield);
-                }
-                self.color <- hsb(0.33, min(1.0, self.SOC / 30.0), 0.9);
+        // Execute biophysical engine for each parcel
+        ask Parcel {
+            int my_action <- actions_list[self.index]; 
+            ask biophysical_engine {
+                do execute_on(myself, my_action, soc_effects, yield_effects, sigma_soc, sigma_yield);
             }
-    	    
-    	    // Mise à jour des indicateurs
-    	    list<int> obs <- Parcel collect ((each.soil_type_id - 1) * (M + 1) + each.new_tree_age);
-    	    list<float> rewards <- Parcel collect (alpha * each.delta_SOC + (1.0 - alpha) * each.yield);
-    	   
-    	    ask gym_interface {
-    	        do update_interface(obs, rewards, Parcel collect each.SOC, Parcel collect each.yield);
-    	    }
+            // Update visual state based on SOC [cite: 74]
+            self.color <- hsb(0.33, min(1.0, self.SOC / 30.0), 0.9);
+        }
+        
+        // 3. Update observations and rewards [cite: 69, 71]
+        list<int> obs <- Parcel collect ((each.soil_type_id - 1) * (M + 1) + min(M, each.new_tree_age));
+        list<float> rewards <- Parcel collect (alpha * each.delta_SOC + (1.0 - alpha) * each.yield);
+       
+        ask gym_interface {
+            do update_interface(obs, rewards, Parcel collect each.SOC, Parcel collect each.yield);
+        }
+
+        // 4. Descriptive Logging (End of Season 20, every 50 episodes)
+        if (cycle = 19) {
+            if (current_episode mod 50 = 0) {
+                float mean_soc <- mean(Parcel collect each.SOC);
+                float mean_yield <- mean(Parcel collect each.yield);
+                float last_step_reward <- sum(rewards);
+
+                write "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+                write "📊 DESCRIPTIVE STATS - EPISODE " + current_episode;
+                write "   > Mean SOC: " + mean_soc + " Mg/ha";
+                write "   > Mean Yield: " + mean_yield + " t/ha";
+                write "   > Season Final Reward: " + last_step_reward;
+                write "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+            }
         }
     }
+}
 }
 
 species GymAgent {
@@ -200,6 +220,9 @@ species GymAgent {
 }
 
 experiment "AgroCarbonSimulation" type: gui {
+	
+	// --- Global Parameters ---
+	parameter "Current Episode: " var: current_episode min: 0 max: 1000 category: "Simulation Control";
 	
 	// --- Policy Parameters ---
     parameter "Alpha (Reward Trade-off): " var: alpha min: 0.0 max: 1.0 category: "Policy";

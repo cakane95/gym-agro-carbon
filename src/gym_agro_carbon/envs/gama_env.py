@@ -52,14 +52,13 @@ class GamaAgroCarbonEnv(AgroCarbonGridEnv):
         
         if isinstance(raw_data, str):
             try:
-                # 1. Nettoyage des assignations GAML (= -> :)
-                # On utilise regex pour entourer les clés par des guillemets
+                # 1. Cleaning GAML syntax (= -> :)
                 clean = re.sub(r'([a-zA-Z_]+)=', r'"\1":', raw_data)
                 
-                # 2. Conversion des séparateurs de matrices GAML (; -> ,)
+                # 2. Convert GAML matrix separators
                 clean = clean.replace(';', ',')
                 
-                # 3. Conversion des booléens
+                # 3. Convert Boolean
                 clean = clean.replace('false', 'false').replace('true', 'true')
                 
                 return json.loads(clean)
@@ -69,39 +68,39 @@ class GamaAgroCarbonEnv(AgroCarbonGridEnv):
         
         return {}
 
-    def reset(self, seed: Optional[int] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """
-        Resets the environment and retrieves the initial state from GAMA GymAgent.
-        """
-        # Parameters matching your GAML experiment
+    def reset(self, seed=None, options=None, **kwargs):
+        episode_id = options.get("episode_id", 0) if options else 0
+        
         params = [
             {"name": "S", "value": self.env_spec.S, "type": "int"},
             {"name": "M", "value": self.env_spec.M, "type": "int"},
-            {"name": "Alpha (Reward Trade-off): ", "value": self.env_spec.alpha, "type": "float"}
+            {"name": "Alpha", "value": self.env_spec.alpha, "type": "float"},
+            {"name": "Episode Index", "value": episode_id, "type": "int"}
         ]
 
         try:
-            self.gama.close() # Ensure clean restart
-            self.gama.load_experiment(self.gaml_file, self.experiment_name, params)
+            # Vérifie si une expérience existe déjà pour savoir s'il faut reload ou load
+            if self.gama.experiment_id:
+                # ✅ Utilise le reload natif de gama-client (conserve le socket)
+                self.gama.client.reload(self.gama.experiment_id, parameters=params)
+            else:
+                # Premier lancement
+                self.gama.load_experiment(self.gaml_file, self.experiment_name, params)
             
+            # Gestion du seed comme dans gama_gymnasium
             if seed is not None:
                 self.gama._execute_expression(f"seed <- {seed};")
             
-            # Read initial data from the agent
+            # Récupération des données initiales
             raw_response = self.gama._execute_expression("gym_interface.data")
             data = self._ensure_dict(raw_response)
             
-            # Reshape observation (10x10)
+            # Reshape de l'observation
             obs_flat = np.array(data.get("State", []), dtype=np.int32)
-            if obs_flat.size == 0:
-                obs = np.zeros((self.env_spec.H, self.env_spec.W), dtype=np.int32)
-            else:
-                obs = obs_flat.reshape((self.env_spec.H, self.env_spec.W))
+            obs = obs_flat.reshape((self.env_spec.H, self.env_spec.W))
             
             self.current_step = 0
-            info = {"status": "Reset Done", "exp_id": self.gama.experiment_id}
-            
-            return obs, info
+            return obs, {"status": "Reset Done", "exp_id": self.gama.experiment_id}
 
         except Exception as e:
             logger.error(f"GAMA Reset Error: {e}")

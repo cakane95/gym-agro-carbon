@@ -43,6 +43,7 @@ def build_oracle_policy(
     for ctx_id in range(num_contexts):
         s, tau = encoder.from_id(ctx_id)
 
+        # L'Oracle compare ici les valeurs actualisées (Eq. 2)
         best_a = 0
         best_mu = reward_model.mu_reward(0, s, tau)
 

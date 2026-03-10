@@ -98,15 +98,17 @@ class RegretTracker:
 
         # 2) mu(a,x) for chosen actions: compute deterministically via RewardModel
         # We decode contexts then evaluate mu_reward(action, s, tau)
-        H, W = obs_context_ids.shape
-        mu_a_grid = np.zeros((H, W), dtype=np.float32)
+        H_grid, W_grid = obs_context_ids.shape
+        mu_a_grid = np.zeros((H_grid, W_grid), dtype=np.float32)
 
         # Small loops are OK for V1; can be vectorized later if needed.
-        for i in range(H):
-            for j in range(W):
+        for i in range(H_grid):
+            for j in range(W_grid):
                 ctx_id = int(obs_context_ids[i, j])
                 a = int(actions_grid[i, j])
                 s, tau = self.encoder.from_id(ctx_id)
+                
+                # mu_reward gère l'Eq. 2 et la neutralisation pendant la croissance
                 mu_a_grid[i, j] = float(self.reward_model.mu_reward(a, s, tau))
 
         regret_grid = (mu_star_grid - mu_a_grid).astype(np.float32)
